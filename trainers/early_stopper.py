@@ -18,13 +18,13 @@ class EarlyStopper:
         :param large_is_better: set large_is_better to false if we log loss, because smaller loss is better
         :param trace_func:
         """
-        self.patience = patience
-        self.verbose = verbose
+        self.patience = patience # how long to wait after last time validation loss improved. 
+        self.verbose = verbose # if true, prints a message for each validation loss improvement. 
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.delta = delta
-        self.save_dir = save_dir
+        self.delta = delta # minimum change in the monitored quantity to qualify as improvement 
+        self.save_dir = save_dir # path for the checkpoint to be saved to 
         self.trace_func = trace_func
         self.large_is_better = large_is_better
 

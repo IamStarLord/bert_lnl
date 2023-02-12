@@ -5,7 +5,10 @@ from torch.utils.data import Dataset
 from transformers import AdamW, get_linear_schedule_with_warmup
 from trainers.trainer import Trainer
 from tqdm import tqdm
-# import wandb
+import wandb
+
+import random
+import sys
 
 from trainers.early_stopper import EarlyStopper
 from trainers.loss_noise_tracker import LossNoiseTracker
@@ -14,6 +17,7 @@ from trainers.loss_noise_tracker import LossNoiseTracker
 class BertWN_Trainer(Trainer):
     def __init__(self, args, logger, log_dir, model_config, full_dataset, random_state):
         super(BertWN_Trainer, self).__init__(args, logger, log_dir, model_config, full_dataset, random_state)
+        # enabling a store_model_flag here
         self.store_model_flag = True if args.store_model == 1 else False
 
 
@@ -29,15 +33,21 @@ class BertWN_Trainer(Trainer):
         model = self.create_model(args)
         model = model.to(device)
 
-        assert args.nl_batch_size % args.gradient_accumulation_steps == 0
-        nl_sub_batch_size = args.nl_batch_size // args.gradient_accumulation_steps
-        nl_bucket = torch.utils.data.DataLoader(nl_set, batch_size=nl_sub_batch_size,
+        # assert args.nl_batch_size % args.gradient_accumulation_steps == 0
+        # # compute after how many batch to perform gradient update. 
+        # for gradient accumulation. 
+        # nl_sub_batch_size = args.nl_batch_size // args.gradient_accumulation_steps
+        # make training data subset 
+        # nl_subset = self.make_dataset_subset(nl_set, 46, subset=0.5)
+        # print(f"Length of subset is {len(nl_subset)}")
+        # training data loader
+        nl_bucket = torch.utils.data.DataLoader(nl_set, batch_size=args.nl_batch_size,
                                                 shuffle=True,
                                                 num_workers=0)
-
+        # convert the bucket into an iter object
         nl_iter = iter(nl_bucket)
 
-
+        # testing data loader
         t_loader = torch.utils.data.DataLoader(t_set, batch_size=args.eval_batch_size,
                                                shuffle=False,
                                                num_workers=0)
@@ -47,6 +57,7 @@ class BertWN_Trainer(Trainer):
             v_loader = None
         else:
             logger.info('Validation set is used here')
+            # validation data loader
             v_loader = torch.utils.data.DataLoader(v_set, batch_size=args.eval_batch_size,
                                                    shuffle=False,
                                                    num_workers=0)
@@ -60,15 +71,20 @@ class BertWN_Trainer(Trainer):
         ce_loss_fn = nn.CrossEntropyLoss()
 
         if self.store_model_flag:
+            # if store model flag is on, then save early_stopper_model
             early_stopper_save_dir = os.path.join(self.log_dir, 'early_stopper_model')
+            # if directory does not exist create it
             if not os.path.exists(early_stopper_save_dir):
                 os.makedirs(early_stopper_save_dir)
         else:
             early_stopper_save_dir = None
 
-        # We log the validation accuracy, so, large_is_better should set to True
+        # We log the validation accuracy, so, large_is_better should be set to True
         early_stopper = EarlyStopper(patience=args.patience, delta=0, save_dir=early_stopper_save_dir,
                                      large_is_better=True, verbose=False, trace_func=logger.info)
+
+        # print(f"early stopping is set to {early_stopper.early_stop}")
+        # sys.exit()
 
         noise_tracker_dir = os.path.join(self.log_dir, 'loss_noise_tracker')
         loss_noise_tracker = LossNoiseTracker(args, logger, nl_set, noise_tracker_dir)
@@ -77,19 +93,22 @@ class BertWN_Trainer(Trainer):
 
 
         for idx in tqdm(range(num_training_steps), desc=f'[Vannilla Trainer] training'):
+            # reinitialized for each new training step
             ce_loss_mean = 0.0
 
-            for i in range(args.gradient_accumulation_steps):
-                model.train()
-                try:
-                    nl_batch = next(nl_iter)
-                except:
-                    nl_iter = iter(nl_bucket)
-                    nl_batch = next(nl_iter)
+            # for i in range(args.gradient_accumulation_steps):
+            model.train()
+            try:
+                # get next bach of data every gradient_accumulation_steps
+                nl_batch = next(nl_iter)
+            except:
+                nl_iter = iter(nl_bucket)
+                nl_batch = next(nl_iter)
 
-                nll_loss = \
-                    self.forward_backward_noisy_batch(model, {'nl_batch': nl_batch}, ce_loss_fn, args, device)
-                ce_loss_mean += nll_loss
+            nll_loss = \
+                self.forward_backward_noisy_batch(model, {'nl_batch': nl_batch}, ce_loss_fn, args, device)
+            # compute the loss and add to the mean loss
+            ce_loss_mean += nll_loss
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
             optimizer.step()
@@ -97,26 +116,29 @@ class BertWN_Trainer(Trainer):
             model.zero_grad()
             global_step += 1
 
-            # wandb.log({'train/batch_loss': ce_loss_mean})
+            wandb.log({'train/batch_loss': ce_loss_mean})
 
+            # if evaluation is needed 
             if self.needs_eval(args, global_step):
                 val_score = self.eval_model_with_both_labels(model, v_loader, device, fast_mode=args.fast_eval)
                 test_score = self.eval_model(args, logger, t_loader, model, device, fast_mode=args.fast_eval)
 
                 early_stopper.register(val_score['score_dict_n']['accuracy'], model, optimizer)
 
-                # wandb.log({'eval/loss/val_c_loss': val_score['val_c_loss'],
-                #            'eval/loss/val_n_loss': val_score['val_n_loss'],
-                #            'eval/score/val_c_acc': val_score['score_dict_c']['accuracy'],
-                #            'eval/score/val_n_acc': val_score['score_dict_n']['accuracy'],
-                #            'eval/score/test_acc': test_score['score_dict']['accuracy']}, step=global_step)
+                wandb.log({'eval/loss/val_c_loss': val_score['val_c_loss'],
+                           'eval/loss/val_n_loss': val_score['val_n_loss'],
+                           'eval/score/val_c_acc': val_score['score_dict_c']['accuracy'],
+                           'eval/score/val_n_acc': val_score['score_dict_n']['accuracy'],
+                           'eval/score/test_acc': test_score['score_dict']['accuracy']}, step=global_step)
 
                 loss_noise_tracker.log_loss(model, global_step, device)
                 loss_noise_tracker.log_last_histogram_to_wandb(step=global_step, normalize=True, tag='eval/loss')
 
+            print(f"early stopping is set to {early_stopper.early_stop}")
             if early_stopper.early_stop:
                 break
 
+        # save the best model 
         if args.save_loss_tracker_information:
             loss_noise_tracker.save_logged_information()
             self.logger.info("[WN Trainer]: loss history saved")
@@ -127,12 +149,9 @@ class BertWN_Trainer(Trainer):
 
         val_score = self.eval_model_with_both_labels(best_model, v_loader, device, fast_mode=False)
         test_score = self.eval_model(args, logger, t_loader, best_model, device, fast_mode=False)
-        # wandb.run.summary["best_score_on_val_n"] = test_score['score_dict']['accuracy']
-        # wandb.run.summary["best_val_n"] = val_score['score_dict_n']['accuracy']
-        # wandb.run.summary["best_val_c_on_val_n"] = val_score['score_dict_c']['accuracy']
-
-
-
+        wandb.run.summary["best_score_on_val_n"] = test_score['score_dict']['accuracy']
+        wandb.run.summary["best_val_n"] = val_score['score_dict_n']['accuracy']
+        wandb.run.summary["best_val_c_on_val_n"] = val_score['score_dict_c']['accuracy']
 
     def forward_backward_noisy_batch(self, model, data_dict, loss_fn, args, device):
 
@@ -154,5 +173,8 @@ class BertWN_Trainer(Trainer):
 
 
         return loss.item()
+
+
+
 
 

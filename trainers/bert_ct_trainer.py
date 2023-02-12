@@ -5,7 +5,7 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 import torch.nn.functional as F
 from tqdm import tqdm
 from trainers.trainer import Trainer
-# import wandb
+import wandb
 from trainers.early_stopper import EarlyStopper
 from trainers.loss_noise_tracker import LossNoiseTracker
 import os
@@ -99,8 +99,7 @@ class BertCT_Trainer(Trainer):
                                    args, device)
             global_step += 1
 
-            #
-            # wandb.log({'train/batch_loss1': ce_loss1})
+            wandb.log({'train/batch_loss1': ce_loss1})
 
 
             if self.needs_eval(args, global_step):
@@ -109,11 +108,11 @@ class BertCT_Trainer(Trainer):
 
                 early_stopper.register(val_score['score_dict_n']['accuracy'], model1, optimizer1)
 
-                # wandb.log({'eval/loss/val_c_loss': val_score['val_c_loss'],
-                #            'eval/loss/val_n_loss': val_score['val_n_loss'],
-                #            'eval/score/val_c_acc': val_score['score_dict_c']['accuracy'],
-                #            'eval/score/val_n_acc': val_score['score_dict_n']['accuracy'],
-                #            'eval/score/test_acc': test_score['score_dict']['accuracy']}, step=global_step)
+                wandb.log({'eval/loss/val_c_loss': val_score['val_c_loss'],
+                           'eval/loss/val_n_loss': val_score['val_n_loss'],
+                           'eval/score/val_c_acc': val_score['score_dict_c']['accuracy'],
+                           'eval/score/val_n_acc': val_score['score_dict_n']['accuracy'],
+                           'eval/score/test_acc': test_score['score_dict']['accuracy']}, step=global_step)
 
                 loss_noise_tracker.log_loss(model1, global_step, device)
                 loss_noise_tracker.log_last_histogram_to_wandb(step=global_step, normalize=True, tag='eval/loss')
@@ -131,9 +130,9 @@ class BertCT_Trainer(Trainer):
 
         val_score = self.eval_model_with_both_labels(best_model, v_loader, device, fast_mode=False)
         test_score = self.eval_model(args, logger, t_loader, best_model, device, fast_mode=False)
-        # wandb.run.summary["best_score_on_val_n"] = test_score['score_dict']['accuracy']
-        # wandb.run.summary["best_val_n"] = val_score['score_dict_n']['accuracy']
-        # wandb.run.summary["best_val_c_on_val_n"] = val_score['score_dict_c']['accuracy']
+        wandb.run.summary["best_score_on_val_n"] = test_score['score_dict']['accuracy']
+        wandb.run.summary["best_val_n"] = val_score['score_dict_n']['accuracy']
+        wandb.run.summary["best_val_c_on_val_n"] = val_score['score_dict_c']['accuracy']
 
 
 

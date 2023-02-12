@@ -9,7 +9,7 @@ from tqdm import tqdm
 from models.cm import CMGT
 from trainers.early_stopper import EarlyStopper
 from trainers.loss_noise_tracker import LossNoiseTracker
-# import wandb
+import wandb
 
 # Reimplementation of the paper: Using Trusted Data to Train Deep Networks on Labels Corrupted by Severe Noise
 # Check https://proceedings.neurips.cc/paper/2018/hash/ad554d8c3b06d6b97ee76a2448bd7913-Abstract.html
@@ -104,7 +104,7 @@ class BertCMGT_Trainer(Trainer):
             cm_model.zero_grad()
             global_step += 1
 
-            # wandb.log({'train/batch_loss': ce_loss_mean})
+            wandb.log({'train/batch_loss': ce_loss_mean})
 
             if self.needs_eval(args, global_step):
                 val_score = self.eval_model_with_both_labels(cm_model.base_model, v_loader, device, fast_mode=args.fast_eval)
@@ -112,11 +112,11 @@ class BertCMGT_Trainer(Trainer):
 
                 early_stopper.register(val_score['score_dict_n']['accuracy'], cm_model.base_model, optimizer)
 
-                # wandb.log({'eval/loss/val_c_loss': val_score['val_c_loss'],
-                #            'eval/loss/val_n_loss': val_score['val_n_loss'],
-                #            'eval/score/val_c_acc': val_score['score_dict_c']['accuracy'],
-                #            'eval/score/val_n_acc': val_score['score_dict_n']['accuracy'],
-                #            'eval/score/test_acc': test_score['score_dict']['accuracy']}, step=global_step)
+                wandb.log({'eval/loss/val_c_loss': val_score['val_c_loss'],
+                           'eval/loss/val_n_loss': val_score['val_n_loss'],
+                           'eval/score/val_c_acc': val_score['score_dict_c']['accuracy'],
+                           'eval/score/val_n_acc': val_score['score_dict_n']['accuracy'],
+                           'eval/score/test_acc': test_score['score_dict']['accuracy']}, step=global_step)
 
                 loss_noise_tracker.log_loss(cm_model.base_model, global_step, device)
                 loss_noise_tracker.log_last_histogram_to_wandb(step=global_step, normalize=True, tag='eval/loss')
@@ -134,9 +134,9 @@ class BertCMGT_Trainer(Trainer):
 
         val_score = self.eval_model_with_both_labels(best_model, v_loader, device, fast_mode=False)
         test_score = self.eval_model(args, logger, t_loader, best_model, device, fast_mode=False)
-        # wandb.run.summary["best_score_on_val_n"] = test_score['score_dict']['accuracy']
-        # wandb.run.summary["best_val_n"] = val_score['score_dict_n']['accuracy']
-        # wandb.run.summary["best_val_c_on_val_n"] = val_score['score_dict_c']['accuracy']
+        wandb.run.summary["best_score_on_val_n"] = test_score['score_dict']['accuracy']
+        wandb.run.summary["best_val_n"] = val_score['score_dict_n']['accuracy']
+        wandb.run.summary["best_val_c_on_val_n"] = val_score['score_dict_c']['accuracy']
 
     def forward_backward_cm_noisy_batch(self, cm_model, nl_databatch, args, device):
         # https://huggingface.co/transformers/custom_datasets.html

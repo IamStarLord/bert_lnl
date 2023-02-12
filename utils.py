@@ -10,6 +10,7 @@ from trainers.bert_ct_trainer import BertCT_Trainer
 from trainers.bert_cm_trainer import BertCM_Trainer
 from trainers.bert_cmgt_trainer import BertCMGT_Trainer
 from trainers.bert_smoothing_trainer import BertSmoothing_Trainer
+from trainers.bert_ceta_trainer import BertCETA_Trainer
 
 
 
@@ -24,12 +25,12 @@ def create_trainer(args, logger, log_dir, model_config, full_dataset, random_sta
         trainer = BertCMGT_Trainer(args, logger, log_dir, model_config, full_dataset, random_state)
     elif args.trainer_name == 'bert_smoothing':
         trainer = BertSmoothing_Trainer(args, logger, log_dir, model_config, full_dataset, random_state)
+    elif args.trainer_name == "bert_ceta":
+        trainer = BertCETA_Trainer(args, logger, log_dir, model_config, full_dataset, random_state)
     else:
         raise NotImplementedError('Unknown Trainer Name')
 
     return trainer
-
-
 
 
 def load_config(args):

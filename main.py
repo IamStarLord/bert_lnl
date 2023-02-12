@@ -5,38 +5,49 @@ import numpy as np
 import torch
 import random
 
-
 def main():
+    # initialize a parser
     parser = argparse.ArgumentParser()
+    # argument dataset accepts a string, defaultis IMDB
     parser.add_argument('--dataset', type=str, default='IMDB', choices=['SST-2', 'AG_News',
                                                                         'TREC', 'IMDB', 'Yelp-5',
-                                                                        'Yoruba', 'Hausa'])
+                                                                       'Yoruba', 'Hausa'])
+    # the directory storing data
     parser.add_argument('--data_root', type=str, default="")
+    # the directory storing the logs during training/testing
     parser.add_argument('--log_root', type=str, default="",
                         help='output directory to save logs in training/testing')
-
+    # which trainer to use. 
     parser.add_argument('--trainer_name', type=str, default='bert_wn',
-                        choices=['bert_wn', 'bert_ct', 'bert_cm', 'bert_cmgt', 'bert_smoothing'],
+                        choices=['bert_wn', 'bert_ct', 'bert_cm', 'bert_cmgt', 'bert_smoothing', 'bert_ceta'],
                         help='trainer selection: '
                              'bert_wn: without noise-handling,'
                              'bert_ct: co-teaching, '
                              'bert_cm: noise matrix, '
                              'bert_cmgt: ground truth noise matrix,'
-                             'bert_smoothing: label smoothing')
+                             'bert_smoothing: label smoothing,' 
+                             'bert_ceta: with CETA,')
+    # chose between number of bert models to use
     parser.add_argument('--model_name', type=str, default='bert-base-uncased',
                         choices=['bert-base-uncased', 'bert-base-cased',
                                  'bert-large-uncased', 'bert-base-multilingual-cased'],
                         help='backbone selection')
+    # experiment name ?
     parser.add_argument('--exp_name', type=str, default='')
 
 
     # Preprocessing Related
+    # max sentence length
     parser.add_argument('--max_sen_len', type=int, default=512,
                         help='max sentence length, longer sentences will be truncated')
+    # special tokens used in bert tokenizer
     parser.add_argument('--special_token_offsets', type=int, default=2,
                         help='number of special tokens used in bert tokenizer for text classification')
+    # truncate mode ?
     parser.add_argument('--truncate_mode', type=str, default='last',
                         choices=['hybrid, last'], help='last: last 510 tokens, hybrid: first 128 + last 382')
+    # use bert embeddings. the store_true option by default stores a value of False, if a value is not provided. 
+    # likewise the store_false option by default stores a value of True. 
     parser.add_argument('--freeze_bert', action='store_true',
                         help='freeze the bert backbone, i.e. use bert as feature extractor')
 
@@ -47,11 +58,14 @@ def main():
     parser.add_argument('--noise_type', default='uniform_m',
                         choices=['uniform_m', 'sflip'],
                         help='noise types: uniform_m: uniform noise, sflip: single-flip noise')
+    # by default the fraction of training set to use for validation is set to 0.1
     parser.add_argument('--val_fraction', type=float, default=0.1,
                         help='if no validation set is provided, use this fraction of training set as validation set')
 
     # training related
     parser.add_argument('--num_epochs', type=int, default=1, help='set either num_epochs or num_training_steps')
+    # training steps refer to number of gradient updates. One training step is one gradient update. 
+    # in one step, batch_size examples are processed. 
     parser.add_argument('--num_training_steps', type=int, default=-1, help='set it to -1 if num_epochs is set')
     parser.add_argument('--train_eval_freq', type=int, default=10,
                         help='evaluate the model on training set after every [train_eval_freq] training steps')
@@ -60,7 +74,7 @@ def main():
                              'after every [eval_freq] training steps')
     parser.add_argument('--fast_eval', action='store_true',
                         help='use 10% of the test set for evaluation, to speed up the evaluation prcoess')
-
+    # number of noisy labeled samples per batch.
     parser.add_argument('--nl_batch_size', type=int, default=16,
                         help='noisy labeled samples per batch, can be understood as the training batch size')
     parser.add_argument('--eval_batch_size', type=int, default=50,
@@ -73,6 +87,7 @@ def main():
     parser.add_argument('--gen_val', action='store_true',
                         help='generate validation set, enable it if there is no validation set')
     parser.add_argument('--store_model', type=int, default=0, help='save models after training')
+    parser.add_argument('--save_loss_tracker_information', action='store_true', help='save loss values')
 
 
     # co-teaching related
@@ -106,6 +121,7 @@ def main():
     parser.add_argument('--manualSeed', type=int, default=1234, help='random seed for reproducibility')
     parser.add_argument('--noisy_label_seed', type=int, default=1234, help='random seed for reproducibility')
 
+
     args = parser.parse_args()
 
     if args.manualSeed is None:
@@ -132,7 +148,7 @@ def main():
     if args.dataset in ['SST-2', 'AG_News', 'TREC', 'IMDB', 'Yelp-5']:
         logger.info(f'loading {args.dataset}...')
 
-
+        # what is has_ul
         if args.dataset in ['SST-2', 'AG_News', 'TREC', 'Yelp-5']:
             has_val = False
             has_ul = False
@@ -149,7 +165,6 @@ def main():
                                                                    num_classes, has_ul)
     else:
         raise NotImplementedError(f"dataset {args.dataset} not supported")
-
 
     model_config = load_config(args)
     model_config['num_classes'] = num_classes

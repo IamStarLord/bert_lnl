@@ -17,7 +17,8 @@ class LossNoiseTracker:
         self.d_loader = torch.utils.data.DataLoader(d_set, batch_size=args.eval_batch_size,
                                                 shuffle=False,
                                                 num_workers=0)
-
+        # initialize wandb
+        wandb.init(project="main-experiments", entity="labelnoise")
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         self.save_dir = save_dir

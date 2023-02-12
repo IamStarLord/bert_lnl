@@ -14,18 +14,29 @@ def make_noisy_general(clean_data, noise_matrix, random_state, num_classes):
     Returns:
         A perturbed copy of clean_data (the noisy_data)
     """
+
+    # assert that the sum of a row is close to 1 (within a tolerance)
     for row in noise_matrix:
         assert np.isclose(np.sum(row), 1)
-
+    # print(f"noise matrix is {noise_matrix.shape}")
+    # length of noise matrix is equal to the number of classes 
     assert len(noise_matrix) == num_classes
-
+    # make a deep copy of the clean data to corrupt
     noisy_data = copy.deepcopy(clean_data)
+    # print(f"clean data shape is {clean_data.shape}")
+    # iterate through the noisy data (one item at a time)
     for i in range(len(noisy_data)):
+        # print(f"noisy data at i is {noisy_data[i]}")
+        # is this right, ask Dr. Hanan?
         probability_row = noise_matrix[noisy_data[i]]
+        # print(probability_row)
+        # chose randomly from the classes, the probability row provides probabilies for each of the 4 values. 
         noisy_data[i] = random_state.choice(num_classes, p=probability_row)
+        # labels are now corrupted 
+    # return the noisy data 
     return noisy_data
 
-
+# inject specific type of noise according to noise level in the dataset 
 def make_data_noisy(y, noise_level, noise_type, r_state, num_classes):
     assert noise_type in ['sflip', 'uniform', 'uniform_m']
 
@@ -42,13 +53,28 @@ def make_data_noisy(y, noise_level, noise_type, r_state, num_classes):
     return noisy_data
 
 def make_noisy_uniform(y, noise_level, r_state, num_classes):
+    """
+    Args: 
+    y: clean labels
+    noise_level: used to generate the noise matrix 
+    r_state: random state for reproducibility 
+
+    returns:
+    the noise matrix, and the corrupted labels
+    """
     assert num_classes == len(set(y))
+    # noise level is a probability value 
     clean_label_probability = 1 - noise_level
+    # noise level is equally distributed across all the labels (even clean label probability) ?
     uniform_noise_probability = noise_level / num_classes  # distribute noise_level across all other labels
     clean_label_probability += uniform_noise_probability
 
+    # initialize empty matrix of shape num_classes x num_classes 
     true_noise_matrix = np.empty((num_classes, num_classes))
+    # fill the array with a scalar value: in this case the uniform_noise_probability
     true_noise_matrix.fill(uniform_noise_probability)
+    # true noise matrix is a square matrix where the principal diagonal is equal to clean_label_probability , 
+    # and the rest is equal to uniform_noise_probability
     for true_label in range(num_classes):
         true_noise_matrix[true_label][true_label] = clean_label_probability
 

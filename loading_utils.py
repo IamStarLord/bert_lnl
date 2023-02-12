@@ -14,12 +14,18 @@ import utils
 def prepare_data(args, logger, r_state, num_classes, has_val, has_ul):
     # used for experiments with injected noise
 
+    # load the appropriate tokenizer 
     tokenizer = load_tokenizer(args)
+    # get training and validation dataset 
     tr_data, val_data = get_training_validation_set(args, logger, tokenizer, r_state, has_val, num_classes)
+    # get the test data
     test_data = load_and_cache_text(args, tokenizer, logger, tag='test')
 
+    # get noist dataset (embeddings ?)
     n_set = TextBertDataset(args, tr_data, tokenizer, r_state, num_classes, make_noisy=True)
+    # get validation dataset (validation dataset is noisy as well)
     v_set = TextBertDataset(args, val_data, tokenizer, r_state, num_classes, make_noisy=True)
+    # get the test dataset 
     t_set = TextBertDataset(args, test_data, tokenizer, r_state, num_classes, make_noisy=False)
 
     n_set_noisy_labels = copy.deepcopy(n_set.noisy_labels)
@@ -37,15 +43,17 @@ def prepare_data(args, logger, r_state, num_classes, has_val, has_ul):
 
 
 def prepare_af_data(args, logger, num_classes, has_ul):
+    # must be used for datasets with no injected label noise 
     tokenizer = load_tokenizer(args)
     n_set = get_clean_and_noisy_data_by_tag(args, logger, tokenizer, num_classes, tag='train')
     v_set = get_clean_and_noisy_data_by_tag(args, logger, tokenizer, num_classes, tag='validation')
     t_set = get_clean_and_noisy_data_by_tag(args, logger, tokenizer, num_classes, tag='test')
-
+    # has_ul refers to unlabeled data
     assert not has_ul  # we do not have unlabeled data in Yoruba and Hausa dataset
     u_set = None
 
     label_mapping_data_dir = os.path.join(args.data_root, args.dataset, 'txt_data')
+    # load a pickle file with l2idx.pickle and idx2l.pickle
     l2id = utils.pickle_load(os.path.join(label_mapping_data_dir, 'l2idx.pickle'))
     id2l = utils.pickle_load(os.path.join(label_mapping_data_dir, 'idx2l.pickle'))
 
@@ -66,13 +74,26 @@ def get_training_validation_set(args, logger, tokenizer, r_state, has_val, num_c
         with open(val_indices_path, 'rb') as handle:
             val_indices = pickle.load(handle)
 
+        # print(f"length of val_indices is {val_indices}")
+        # change other label pickles to save arrays as well, otherwise pickle.load only returns one item 
+        # print(f"length of tr_data[\"labels\"]={len(tr_data['labels'])}")
+        # print(f"length of val_indices is {len(val_indices)}")
         val_mask = np.zeros(len(tr_data['labels']), dtype=bool)
         val_mask[val_indices] = True
+        # print(f"the val mask array is {val_mask}")
 
+        # print(f"the shape of the mask is {val_mask.shape}")
+        # print(f"the indexed tensor tr_data['features'].items() is {tr_data['features'].items()}")
+        # for k, v in tr_data["features"].items():
+            # print(k, v.shape)
+        # get val_features
         val_features = {k: v[val_mask] for k,v in tr_data['features'].items()}
+        # get validation labels 
         val_labels = tr_data['labels'][val_mask]
+        # get validation text
         val_text  = np.array(tr_data['text'])[val_mask]
 
+        # get train features, labels and text
         train_features = {k: v[~val_mask] for k,v in tr_data['features'].items()}
         train_labels = tr_data['labels'][~val_mask]
         train_text  = np.array(tr_data['text'])[~val_mask]
@@ -89,35 +110,47 @@ def get_training_validation_set(args, logger, tokenizer, r_state, has_val, num_c
 def get_clean_and_noisy_data_by_tag(args, logger, tokenizer, num_classes, tag):
     noisy_data_tag = f'{tag}_clean'
 
-    #get text data with noisy labels
+    # this is caching only the clean labels 
     clean_noisy_data = load_and_cache_text(args, tokenizer, logger, tag=noisy_data_tag)
 
-    #get the clean training and the clean validation sets
+    # changing the file reading path 
     txt_data_dir = os.path.join(args.data_root, args.dataset, 'txt_data')
+    # if tag == 'train':
+    #     # load from the relabled dataset 
+    #     print("Loading training lables from the relabled data")
+    #     input_path = os.path.join(txt_data_dir, 'train_clean_noisy_1.0.pickle')
+    # else:
+    #     input_path = os.path.join(txt_data_dir, f'{tag}_clean_noisy_labels.pickle')
+    # loading the clean_noisy_labels
     input_path = os.path.join(txt_data_dir, f'{tag}_clean_noisy_labels.pickle')
     noisy_labels = load_pickle_data(input_path)
 
+    # pass the clean and noisy labels to the tokenizer
     td = TextBertRealDataset(args, clean_noisy_data, noisy_labels, tokenizer, num_classes)
     return td
 
-
-
 def load_and_cache_text(args, tokenizer, logger, tag):
+    # this might be the problem with the low acc.  
+    # features should be same for both clean and noisy text file
     cached_features_dir = os.path.join(args.data_root, args.dataset, 'bert_preprocessed') # cache dir (output dir)
     txt_data_dir = os.path.join(args.data_root, args.dataset, 'txt_data') # input file dir
 
     if not os.path.exists(cached_features_dir):
         os.makedirs(cached_features_dir)
 
+    # get the cached features path
     cached_features_path = os.path.join(cached_features_dir,
                                         f'{tag}_trun_{args.truncate_mode}_maxl_{args.max_sen_len}')
+    # get the input path 
+    # train_clean.txt, val_clean.txt, test_clean.txt
     input_path = os.path.join(txt_data_dir, f'{tag}.txt')
-
+    # reading text from the clean file 
     docs = read_txt(input_path)
-
+    # if path for cached_features_path exists, load features from it 
     if os.path.exists(cached_features_path):
         logger.info(f'[Loading and Caching] loading from cache...')
         features = torch.load(cached_features_path)
+    # if path does not exist, get the input features from the docs and save the features at the path
     else:
         logger.info(f'[Loading and Caching] number of documents = {len(docs)}')
         logger.info(f'[Loading and Caching] convert text to features...')
@@ -126,11 +159,20 @@ def load_and_cache_text(args, tokenizer, logger, tag):
         torch.save(features, cached_features_path)
         logger.info("[Loading and Caching] saved")
 
+    # load the pickled labels for the dataset.
     logger.info(f'[Loading and Caching] loading labels...')
+    # if tag == 'train_clean':
+    #     input_path = os.path.join(txt_data_dir, f'{tag}_truncated1.0_labels.pickle')
+    # else:
+    #     input_path = os.path.join(txt_data_dir, f'{tag}_labels.pickle')
+
+    # loading the clean labels here 
+    # train_clean_labels.pickle, val_clean_labels.pickle, test_clean_labels.pickle
     input_path = os.path.join(txt_data_dir, f'{tag}_labels.pickle')
     with open(input_path, 'rb') as handle:
         labels = np.array(pickle.load(handle))
 
+    # return a dictionary of features, labels and text 
     return {"features": features, "labels": labels, "text": docs}
 
 
@@ -163,14 +205,16 @@ def truncate_token_ids(token_ids, args, limit):
     else:
         raise ValueError('truncate model not supported')
 
-
+# debug here
 def get_input_features(docs, tokenizer, args):
+    # subtract from max sentence length, the special token offsets?
     limit = args.max_sen_len - args.special_token_offsets
     # sanity check
     if args.truncate_mode == 'hybrid':
         assert args.max_sen_len == 512
     assert limit > 0
     num_docs = len(docs)
+    # print(f"num of docs inside the get_input_features are {num_docs}")
 
     input_id_tensor = torch.zeros((num_docs, args.max_sen_len)).long()
     length_tensor = torch.zeros(num_docs).long()
@@ -192,5 +236,6 @@ def get_input_features(docs, tokenizer, args):
         length_tensor[idx] = input_ids_length
         attention_mask_tensor[idx, :input_ids_length] = attention_mask
 
+    print(f"the final shape of the input_id_tensor is {input_id_tensor.shape}")
     return {'input_ids': input_id_tensor, 'token_type_ids': token_type_tensor,
             'attention_mask': attention_mask_tensor, 'length': length_tensor}

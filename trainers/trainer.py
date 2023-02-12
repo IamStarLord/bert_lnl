@@ -1,6 +1,7 @@
 import torch
 import os
 import numpy as np
+import random 
 from torch.utils.data import Dataset, RandomSampler
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
@@ -9,6 +10,7 @@ from sklearn.metrics import precision_recall_fscore_support as pr_score
 from transformers import AutoModel
 from collections import OrderedDict
 from models.text_bert import TextBert
+from models.bert_ceta import BertCETA
 
 class Trainer:
     def __init__(self, args, logger, log_dir, model_config, full_dataset, random_state):
@@ -23,8 +25,12 @@ class Trainer:
         self.r_state = random_state
         self.store_model_flag = True if args.store_model == 1 else False
 
-    def create_model(self, args):
+    def create_model(self, args, model="TextBert"):
+        if model == "TextBert":
             model = TextBert(self.model_config, None, args)
+            return model
+        elif model == "BertCETA":
+            model = BertCETA(self.model_config, None, args)
             return model
 
     def needs_eval(self, args, global_step):
@@ -38,6 +44,7 @@ class Trainer:
 
 
     def get_data_loader(self, args, input_dataset, bz, drop_last):
+        print("method used here")
         sampler = RandomSampler(input_dataset)
         bbs = BucketBatchSampler(sampler, batch_size=bz, drop_last=drop_last,
                                  sort_key=lambda x: input_dataset.length_list[x], descending=True)
@@ -71,10 +78,12 @@ class Trainer:
     def train(self, args, logger, full_dataset):
         raise NotImplementedError()
 
-
+    # This must evaluate results for train data 
     def eval(self, model, t_loader, performance_tracker, logger, epoch, device, args):
 
+        # all predictions
         all_preds = []
+        # actual labels 
         all_y = []
         model.eval()
 
@@ -87,7 +96,8 @@ class Trainer:
             predicted = torch.max(y_pred.cpu().data, 1)[1]
             all_preds.extend(predicted.numpy())
             all_y.extend(list(batch['label']))
-
+        
+        # get the classification score 
         classification_score = classification_report(all_y, np.array(all_preds).flatten(), self.label_list)
 
         return classification_score
@@ -95,6 +105,7 @@ class Trainer:
 
     def log_score(self, args, logger, score_record, score_str, sw_obj, global_step, prefix, verbose=True):
         if args.metric == "accuracy":
+            # a dictionary maintaining the score 
             score = score_record['accuracy']
             # if verbose:
             #     logger.info(f"{prefix} Acc: {score}")
@@ -111,13 +122,16 @@ class Trainer:
             logger.info(score_str)
 
 
-
+    # get accuracy of chunks of data 
     def get_sub_acc(self, all_y, all_preds, n_chunks):
+        # make chunks of the dataset 
         chunk_size = int(len(all_y)/n_chunks)
         ys = (all_y[i:i + chunk_size] for i in range(0, len(all_y), chunk_size))
         preds = (all_preds[i:i + chunk_size] for i in range(0, len(all_preds), chunk_size))
         return [accuracy_score(y, p) for y, p in zip(ys, preds)]
 
+    # this for actual evaluation
+    # this returns a dict, so I can modify this to return predictions and the actual labels as well 
     def eval_model(self, args, logger, t_loader, model, device, fast_mode):
         all_preds = []
         all_y = []
@@ -177,7 +191,7 @@ class Trainer:
     #
     #     return {'score_dict': classification_score_dict, 'score_str': classification_score_str}
 
-
+    # can return here as well !!
     def eval_model_with_both_labels(self, model, v_loader, device, fast_mode):
         all_preds = []
         all_y_c = []
@@ -227,12 +241,13 @@ class Trainer:
             n_val_loss_avg = n_val_loss_sum/num_val_samples
 
         return {'score_dict_n': classification_score_dict_n,
-                'score_str_n': classification_score_str_n,
+                'score_str_n':  classification_score_str_n,
                 'score_dict_c': classification_score_dict_c,
                 'score_str_c': classification_score_str_c,
                 'val_c_loss': c_val_loss_avg,
                 'val_n_loss': n_val_loss_avg}
 
+    # add in here as well 
     def bert_val_eval_with_noisy_labels(self, model, v_loader, device, fast_mode):
         all_preds = []
         all_y_c = []
@@ -407,3 +422,15 @@ class Trainer:
             raise ValueError("We don't supoort TF loading yet")
         assert args.py_model_path != ''
         model.load_pretrained_lm_model(args, args.py_model_path)
+
+    def make_dataset_subset(self, dataset, seed_value, subset=0.5):
+        """
+        Returns a random subset of the dataset
+        """
+        # size of the dataset 
+        random.seed(seed_value)
+        total_size = len(dataset)
+        subset_size = subset*total_size
+        subset_indices = sorted(random.sample([*range(total_size)], int(subset_size)))
+        print(subset_indices)
+        return torch.utils.data.Subset(dataset, subset_indices)

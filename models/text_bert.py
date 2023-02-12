@@ -12,13 +12,15 @@ class TextBert(nn.Module):
     self.num_classes = model_config['num_classes']
 
     assert bert_backbone is None, 'we do not support training based on provided checkpoints yet'
+    # options such as bert_base_uncased and bert_base_cased
     self.bert = BertModel.from_pretrained(args.model_name)
-
+    # use just the BERT embeddings
     if args.freeze_bert:
       for param in self.bert.parameters():
         param.requires_grad = False
-
+    # set the dropout
     self.drop = nn.Dropout(p=model_config['drop_rate'])
+    # set the linear layer 
     self.out = nn.Linear(self.bert.config.hidden_size, self.num_classes)
 
 

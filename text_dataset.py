@@ -19,27 +19,35 @@ class TextBertDataset(data.Dataset):
         self.noisy_labels = None
         self.purity_list = None
 
-
+        # make labels noisy
         if make_noisy:
+            # create a copy of clean_labels
             clean_labels_copy = copy.deepcopy(input_data['labels'])
+            # inject noise according to noise_type
             nl_y = make_data_noisy(clean_labels_copy, args.noise_level, noise_type=args.noise_type, r_state=r_state,
                                    num_classes=self.num_classes)
             self.noisy_labels = nl_y
+            # generate one where both arrays are equal, 0s otherwise
             self.purity_list = torch.tensor((np.array(nl_y) == np.array(clean_labels_copy))).long()
         else:
+            # otherwise generate an array of shape input_data['labels'] populated with -1s
             self.noisy_labels = -1 * torch.ones(len(input_data['labels'])).long()
             self.purity_list = -1 * torch.ones(len(input_data['labels'])).long()
 
     def get_subset_by_indices(self, indices):
+        # get a subset of data
+        # get encodings for specific indices
         sub_encodings = {key: val[indices] for key, val in self.encodings.items()}
+        # get text for specific indices
         sub_text = self.text[indices]
+        # get clean labels for indices
         sub_labels = self.clean_labels[indices]
         input_data = {'data':sub_encodings, 'labels':sub_labels, 'text': sub_text}
 
         # set make_noisy to False here, because we later manually add the noisy labels to the subset
         subdataset = TextBertDataset(self.args, input_data, self.tokenizer, r_state=None,
                                      num_classes=self.num_classes, make_noisy=False)
-
+        # get noisy labels for the subset by indexing
         subdataset.noisy_labels = self.noisy_labels[indices]
         subdataset.purity_list = self.purity_list[indices]
 
@@ -49,6 +57,7 @@ class TextBertDataset(data.Dataset):
         return len(self.clean_labels)
 
     def __getitem__(self, index):
+        # print(f"self.encodings.items() {self.encodings.items()}")
         item = {key: val[index] for key, val in self.encodings.items()}
         item['c_labels'] = self.clean_labels[index]
         item['n_labels'] = self.noisy_labels[index]
@@ -68,6 +77,8 @@ class TextBertRealDataset(data.Dataset):
         self.encodings = input_data['features']
         self.clean_labels = input_data['labels']
         self.noisy_labels = noisy_labels
+        print(f"Length of clean labels {len(self.clean_labels)}")
+        print(f"Length of noisy labels {len(self.noisy_labels)}")
         assert len(self.noisy_labels) == len(self.clean_labels)
         self.purity_list = torch.tensor((np.array(self.clean_labels) == np.array(self.noisy_labels))).long()
 
@@ -75,7 +86,9 @@ class TextBertRealDataset(data.Dataset):
 
     def get_noise_mat(self):
         assert self.clean_labels is not None, "noise matrix unavailable as no clean data is available"
+        # matrix of shape (num_classes, num_classes)
         noise_mat = np.zeros((self.num_classes, self.num_classes))
+        # what method of matrix generation is this
         for i, j in zip(self.clean_labels, self.noisy_labels):
             noise_mat[i, j] += 1
         noise_mat = noise_mat/noise_mat.sum(axis=1)[:, None]
